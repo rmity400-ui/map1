@@ -702,6 +702,22 @@ export default function App() {
         <div className="flex-grow h-full relative z-0">
           <div ref={mapRef} className="w-full h-full outline-none"></div>
           
+          {/* ប៊ូតុងទៅកាន់ទីតាំងបច្ចុប្បន្នរបស់ User */}
+          <button 
+             onClick={() => {
+                if (userLocation && map) {
+                    map.panTo(userLocation);
+                    map.setZoom(18);
+                } else {
+                    showToast("កំពុងរកទីតាំងរបស់អ្នក...", "info");
+                }
+             }}
+             className="absolute bottom-6 right-6 z-10 bg-white dark:bg-gray-800 p-3 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border dark:border-gray-700"
+             title="ទៅកាន់ទីតាំងខ្ញុំ"
+          >
+             <Navigation className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          </button>
+          
           {/* Overlay for mobile sidebar */}
           {isSidebarOpen && (
               <div 
