@@ -66,7 +66,8 @@ export default function App() {
   const [isAutoLocating, setIsAutoLocating] = useState(false);
   
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-
+  const searchInputRef = useRef(null);
+  const autocompleteRef = useRef(null);
   const mapRef = useRef(null);
   const infoWindowRef = useRef(null);
   const userMarkerRef = useRef(null);
@@ -144,6 +145,7 @@ export default function App() {
       document.head.appendChild(script);
     } else if (window.google && window.google.maps) {
       initializeMap();
+      infoWindowRef.current = new window.google.maps.InfoWindow();
     }
 
     return () => {
@@ -155,52 +157,65 @@ export default function App() {
   }, []);
 
   const fetchNearbyPOIs = async (lat, lng) => {
-      setIsFetchingPois(true);
-      try {
-          // Query Overpass within 5km
-          const query = `
-              [out:json][timeout:25];
-              (
-                node["amenity"~"school|kindergarten"](around:5000,${lat},${lng});
-                node["amenity"~"hospital|clinic|doctors"](around:5000,${lat},${lng});
-                node["amenity"="police"](around:5000,${lat},${lng});
-                node["office"="government"](around:5000,${lat},${lng});
-                node["place"~"village|townhall"](around:5000,${lat},${lng});
-              );
-              out body;
-          `;
-          const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-          const response = await fetch(url);
-          const data = await response.json();
-          
-          if (data && data.elements) {
-              const formattedPOIs = data.elements.filter(e => e.tags && e.tags.name).map(el => {
-                  let type = "ទីតាំងផ្សេងៗ";
-                  let amenity = el.tags.amenity || el.tags.office || el.tags.place;
-                  
-                  if (amenity === 'school' || amenity === 'kindergarten') type = "សាលារៀន";
-                  else if (amenity === 'hospital' || amenity === 'clinic' || amenity === 'doctors') type = "មន្ទីរពេទ្យ / គ្លីនិក";
-                  else if (amenity === 'police') type = "ប៉ុស្តិ៍ប៉ូលីស";
-                  else if (amenity === 'government' || amenity === 'townhall') type = "សាលាឃុំ / ផ្ទះមេភូមិ";
-                  else if (amenity === 'village') type = "ភូមិ / សហគមន៍";
+  setIsFetchingPois(true);
 
-                  return {
-                      id: `osm-${el.id}`,
-                      name: el.tags.name,
-                      type: type,
-                      lat: el.lat,
-                      lng: el.lon,
-                      isAdminData: false 
-                  };
-              });
-              setOsmLocations(formattedPOIs);
+  try {
+    const service =
+      new window.google.maps.places.PlacesService(map);
+
+    const types = [
+      "school",
+      "hospital",
+      "police",
+      "local_government_office",
+    ];
+
+    let allResults = [];
+
+    const searchPromises = types.map((type) => {
+      return new Promise((resolve) => {
+        service.nearbySearch(
+          {
+            location: { lat, lng },
+            radius: 5000,
+            type,
+          },
+          (results, status) => {
+            if (
+              status ===
+              window.google.maps.places.PlacesServiceStatus.OK
+            ) {
+              resolve(results);
+            } else {
+              resolve([]);
+            }
           }
-      } catch (error) {
-          console.error("Failed to fetch nearby POIs", error);
-      } finally {
-          setIsFetchingPois(false);
-      }
-  };
+        );
+      });
+    });
+
+    const results = await Promise.all(searchPromises);
+
+    results.forEach((group) => {
+      group.forEach((place) => {
+        allResults.push({
+          id: place.place_id,
+          name: place.name,
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
+          type: place.types?.[0] || "ទីតាំង",
+          isAdminData: false,
+        });
+      });
+    });
+
+    setOsmLocations(allResults);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setIsFetchingPois(false);
+  }
+};
 
   const initializeMap = () => {
     if (!mapRef.current || !window.google || !window.google.maps) return;
@@ -430,7 +445,34 @@ export default function App() {
          showToast("Error deleting data", "error");
      }
   };
+  // Google Places Autocomplete
+if (searchInputRef.current) {
+  autocompleteRef.current =
+    new window.google.maps.places.Autocomplete(
+      searchInputRef.current,
+      {
+        fields: ["geometry", "name", "formatted_address"],
+      }
+    );
 
+  autocompleteRef.current.addListener("place_changed", () => {
+    const place = autocompleteRef.current.getPlace();
+
+    if (!place.geometry || !place.geometry.location) return;
+
+    const lat = place.geometry.location.lat();
+    const lng = place.geometry.location.lng();
+
+    const newPos = { lat, lng };
+
+    map.panTo(newPos);
+    map.setZoom(16);
+
+    setSearchQuery(place.name || "");
+
+    fetchNearbyPOIs(lat, lng);
+  });
+}
   const handleAdminLogin = () => {
     if (adminPassword === 'ict168') { 
         setIsAdmin(true);
@@ -467,6 +509,7 @@ export default function App() {
             <Search className="h-5 w-5 text-gray-400" />
           </div>
           <input
+            ref={searchInputRef}
             type="text"
             placeholder="ស្វែងរកនៅក្នុងបញ្ជីនេះ..."
             value={searchQuery}
