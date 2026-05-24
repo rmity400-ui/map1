@@ -5,12 +5,23 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 
-// Initialize Firebase App (ជៀសវាងការ Initialize ត្រួតគ្នាពេល Hot-Reload)
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+// ដំណោះស្រាយទី១: ប្តូរមកប្រើ Firebase Config ពិតប្រាកដរបស់អ្នក ឬប្រើ Environment Variables
+// សូមយក Config ពី Firebase Project របស់អ្នកមកដាក់ទីនេះ
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || process.env.REACT_APP_FIREBASE_API_KEY || "សូមដាក់_API_KEY_របស់អ្នកទីនេះ",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "សូមដាក់_AUTH_DOMAIN_របស់អ្នកទីនេះ",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || process.env.REACT_APP_FIREBASE_PROJECT_ID || "សូមដាក់_PROJECT_ID_របស់អ្នកទីនេះ",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || process.env.REACT_APP_FIREBASE_APP_ID || ""
+};
+
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// កំណត់ App ID ជារបស់អ្នកផ្ទាល់ ជៀសវាងអថេរពី AI Platform
+const appId = 'smart-map-app-kh'; 
 
 // រូបមន្តគណនាចម្ងាយ (Haversine Formula) គិតជា គីឡូម៉ែត្រ (km)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -70,11 +81,7 @@ export default function App() {
     document.title = "📍 SmartMap";
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (error) {
         console.error("Auth error:", error);
       }
@@ -91,7 +98,7 @@ export default function App() {
   useEffect(() => {
     if (!authUser) return;
 
-    const locRef = collection(db, 'artifacts', appId, 'public', 'data', 'map_locations');
+    const locRef = collection(db, 'smartmap_data', appId, 'locations'); // កែប្រែ Path ឲ្យខ្លីជាងមុន
     const unsub = onSnapshot(locRef, (snapshot) => {
       const locList = [];
       snapshot.forEach(doc => {
@@ -181,7 +188,7 @@ export default function App() {
                  </a>
                  ${isAdminRef.current ? `
                  <button id="add-temp-btn" class="bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-lg text-sm font-bold border-none cursor-pointer transition-colors w-full mt-1">
-                    ➕ បន្ថែមទីតាំងនេះ
+                   ➕ បន្ថែមទីតាំងនេះ
                  </button>
                  ` : ''}
              </div>
@@ -381,7 +388,7 @@ export default function App() {
     }
   };
 
-  // --- Google Maps Geocoder Search (គាំទ្រគ្រប់ភាសា ពិសេសភាសាខ្មែរដល់កម្រិតភូមិឃុំ) ---
+  // --- Google Maps Geocoder Search ---
   const executeSearch = async (query, localResults = []) => {
     if (!query) return;
     setSearchLoading(true);
@@ -410,7 +417,6 @@ export default function App() {
                   isExternal: true
               };
           });
-          // បញ្ចូលទិន្នន័យពី Map បូកជាមួយទិន្នន័យ Local ដែលរកឃើញ
           setSearchResults([...localResults, ...mappedData]);
           setIsSearching(true);
       } else {
@@ -437,7 +443,6 @@ export default function App() {
 
     setIsSearching(true);
 
-    // 1. ស្វែងរកភ្លាមៗក្នុងទិន្នន័យ Local (ទិន្នន័យដែលមានស្រាប់ក្នុងប្រព័ន្ធដែលបាន Save ទុក)
     const lowerQuery = query.toLowerCase();
     const localMatches = locations
       .filter(loc =>
@@ -451,13 +456,11 @@ export default function App() {
           isLocal: true
       }));
 
-    // បង្ហាញលទ្ធផល Local ភ្លាមៗដោយមិនបាច់រង់ចាំ (No Delay)
     setSearchResults(localMatches);
 
-    // 2. ពន្យារពេលបន្តិច (300ms) ដើម្បីទាញទិន្នន័យពី Map ខាងក្រៅមកបញ្ចូលបន្ថែម
     searchTimeoutRef.current = setTimeout(() => {
       executeSearch(query.trim(), localMatches);
-    }, 300); // បន្ថយពេលវេលាមកត្រឹម 300ms ដើម្បីឱ្យវាលោតចេញលឿនទាន់ចិត្ត
+    }, 300); 
   };
 
   const handleSearchKeyDown = (e) => {
@@ -476,10 +479,8 @@ export default function App() {
     setIsSearching(false);
     
     if (result.isLocal) {
-        // បើជាទិន្នន័យក្នុងប្រព័ន្ធ យើង focus ទៅលើ marker របស់វា និងបើកផ្ទាំងព័ត៌មាន
         focusLocation(result);
     } else {
-        // បើជាទិន្នន័យមកពី Map ខាងក្រៅ
         if(map && window.google) {
           if (result.boundingbox) {
              const sw = new window.google.maps.LatLng(result.boundingbox[0], result.boundingbox[2]);
@@ -520,7 +521,7 @@ export default function App() {
     };
 
     try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'map_locations', newId);
+        const docRef = doc(db, 'smartmap_data', appId, 'locations', newId);
         await setDoc(docRef, newLoc);
         setShowAddModal(false);
         showToast("បានរក្សាទុកទីតាំងដោយជោគជ័យ!", "success");
@@ -533,7 +534,7 @@ export default function App() {
     e.stopPropagation();
     if (!isAdmin || !authUser) return;
     try {
-       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'map_locations', id));
+       await deleteDoc(doc(db, 'smartmap_data', appId, 'locations', id));
        showToast("បានលុបទិន្នន័យ!", "success");
     } catch (err) {
        showToast("មិនអាចលុបបានទេ", "error");
@@ -541,7 +542,7 @@ export default function App() {
   };
 
   const handleAdminLogin = () => {
-    if (adminPassword === 'ict168') { // បានផ្លាស់ប្តូរលេខសម្ងាត់ទៅ ict168
+    if (adminPassword === 'ict168') { 
         setIsAdmin(true);
         setShowPasswordModal(false);
         setAdminPassword('');
@@ -571,7 +572,7 @@ export default function App() {
           <h1 className="text-lg md:text-xl font-bold text-gray-800 dark:text-white flex items-center gap-1">📍 SmartMap</h1>
         </div>
         
-        {/* Search Box - 100% like Google Maps */}
+        {/* Search Box */}
         <div className="flex-grow max-w-2xl mx-2 md:mx-6 relative" ref={searchRef}>
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             {searchLoading ? <Loader2 className="w-5 h-5 text-blue-500 animate-spin" /> : <Search className="w-5 h-5 text-gray-400" />}
@@ -622,14 +623,12 @@ export default function App() {
         </div>
       </header>
 
-      {}
       {/* Main Content Area */}
       <main className="flex-grow flex relative overflow-hidden">
         
-        {/* Left Sidebar (Proximity Places) */}
+        {/* Left Sidebar */}
         <aside className={`w-[300px] md:w-80 bg-white dark:bg-gray-800 shadow-md flex flex-col h-full shrink-0 z-10 border-r border-gray-200 dark:border-gray-700 absolute md:relative transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           
-          {/* បង្ហាញប៊ូតុងបន្ថែម តែពេល Login ជា Admin ប៉ុណ្ណោះ */}
           {isAdmin && (
             <div className="p-4 border-b dark:border-gray-700 space-y-3">
                  <button 
@@ -648,7 +647,6 @@ export default function App() {
                 <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider flex items-center gap-2">
                    <Navigation className="w-4 h-4 text-blue-500" /> ទីតាំងបន្ទាន់ក្បែរៗអ្នក
                 </h2>
-                {/* 🟢 បង្ហាញស្ថានភាព GPS អោយ User ឃើញច្បាស់ */}
                 <div className="flex items-center gap-1.5 text-[10px] font-bold bg-white dark:bg-gray-700 px-2 py-1 rounded-full border border-gray-200 dark:border-gray-600 shadow-sm" title={gpsStatus}>
                     <div className={`w-2 h-2 rounded-full ${userLocation ? 'bg-green-500 animate-pulse' : 'bg-yellow-500 animate-pulse'}`}></div>
                     <span className={userLocation ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}>
@@ -697,144 +695,53 @@ export default function App() {
           </div>
         </aside>
 
-        {}
         {/* Map Container */}
         <div className="flex-grow h-full relative z-0">
           <div ref={mapRef} className="w-full h-full outline-none"></div>
           
-          {/* ប៊ូតុងទៅកាន់ទីតាំងបច្ចុប្បន្នរបស់ User */}
+          {/* ប៊ូតុងទៅកាន់ទីតាំងបច្ចុប្បន្នរបស់ User (កូដដែលដាច់) */}
           <button 
              onClick={() => {
                 if (userLocation && map) {
-                    map.panTo(userLocation);
-                    map.setZoom(18);
+                  map.panTo(userLocation);
+                  map.setZoom(16);
                 } else {
-                    showToast("កំពុងរកទីតាំងរបស់អ្នក...", "info");
+                  showToast('មិនទាន់ចាប់ទីតាំងបានទេ ឬសូមបើក GPS', 'error');
                 }
              }}
-             className="absolute bottom-6 right-6 z-10 bg-white dark:bg-gray-800 p-3 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border dark:border-gray-700"
-             title="ទៅកាន់ទីតាំងខ្ញុំ"
+             className="absolute bottom-6 right-6 bg-white dark:bg-gray-800 p-3 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 z-10 transition-colors"
           >
-             <Navigation className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+             <Navigation className="w-6 h-6 text-blue-500" />
           </button>
-          
-          {/* Overlay for mobile sidebar */}
-          {isSidebarOpen && (
-              <div 
-                  className="absolute inset-0 bg-black/50 z-0 md:hidden"
-                  onClick={() => setIsSidebarOpen(false)}
-              ></div>
-          )}
         </div>
       </main>
-
-      {}
-      {/* --- Modals --- */}
-
-      {/* Admin Login Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative">
-            <button onClick={() => setShowPasswordModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 dark:hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-            <div className="flex justify-center mb-4 text-blue-500">
-               <Shield className="w-12 h-12" />
-            </div>
-            <h2 className="text-xl font-bold text-center mb-6 dark:text-white">ចូលជា Admin</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ពាក្យសម្ងាត់ (Password)</label>
-                <input 
-                  type="password" 
-                  value={adminPassword} 
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
-                  placeholder="បញ្ចូលលេខសម្ងាត់..."
-                  className="w-full border dark:border-gray-600 rounded-lg px-4 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                />
-                <p className="text-xs text-gray-400 mt-2 text-center">(សម្រាប់សាកល្បង សូមវាយ: ict168)</p>
-              </div>
-              <button 
-                onClick={handleAdminLogin}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition-colors shadow-md"
-              >
-                បញ្ជាក់
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add/Edit Location Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative border dark:border-gray-700">
-            <button onClick={() => setShowAddModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 dark:hover:text-white bg-gray-100 dark:bg-gray-700 rounded-full p-1 transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-xl font-bold mb-6 dark:text-white flex items-center gap-2">
-                <MapPin className="w-6 h-6 text-blue-500" /> បន្ថែមទីតាំងថ្មី
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">ឈ្មោះ / តួនាទី <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="ឧទាហរណ៍៖ សាលាបឋមសិក្សា..."
-                  className="w-full border dark:border-gray-600 rounded-lg px-4 py-2.5 bg-gray-50 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">លេខទូរស័ព្ទ <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  placeholder="012 345 678"
-                  className="w-full border dark:border-gray-600 rounded-lg px-4 py-2.5 bg-gray-50 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">ប្រភេទទីតាំង</label>
-                <select 
-                  value={formData.type}
-                  onChange={(e) => setFormData({...formData, type: e.target.value})}
-                  className="w-full border dark:border-gray-600 rounded-lg px-4 py-2.5 bg-gray-50 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                >
-                  <option value="សាលារៀន/នាយកសាលា">សាលារៀន/នាយកសាលា</option>
-                  <option value="មេភូមិ">មេភូមិ</option>
-                  <option value="មេឃុំ/ចៅសង្កាត់">មេឃុំ/ចៅសង្កាត់</option>
-                  <option value="ប៉ុស្តិ៍ប៉ូលីស">ប៉ុស្តិ៍ប៉ូលីស</option>
-                  <option value="អភិបាលស្រុក/ខណ្ឌ">អភិបាលស្រុក/ខណ្ឌ</option>
-                </select>
-              </div>
-              
-              <div className="pt-4">
-                  <button 
-                    onClick={saveLocation}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md flex justify-center items-center gap-2 active:scale-95"
-                  >
-                    <Save className="w-5 h-5" /> រក្សាទុកទីតាំង
-                  </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      
       {/* Toast Notification */}
       {toast.show && (
-        <div className="fixed bottom-6 right-1/2 transform translate-x-1/2 md:translate-x-0 md:right-6 md:left-auto z-[60] animate-bounce">
-          <div className={`px-6 py-3 rounded-full shadow-2xl text-white font-bold text-sm flex items-center gap-2 ${toast.type === 'error' ? 'bg-red-500' : 'bg-gray-900 dark:bg-gray-100 dark:text-gray-900'}`}>
-             {toast.type === 'error' ? <Info className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-             {toast.message}
-          </div>
+        <div className={`absolute top-20 right-5 z-50 px-4 py-2 rounded shadow-lg text-white font-bold ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
+          {toast.message}
         </div>
       )}
 
+      {/* Admin Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-sm shadow-xl">
+             <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Shield className="text-blue-500"/> ចូលជា Admin</h2>
+             <input 
+                type="password" 
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="វាយបញ្ចូលលេខសម្ងាត់..."
+                className="w-full p-3 border rounded mb-4 focus:outline-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+             />
+             <div className="flex justify-end gap-2">
+                <button onClick={() => setShowPasswordModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">បោះបង់</button>
+                <button onClick={handleAdminLogin} className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded font-bold">យល់ព្រម</button>
+             </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }
